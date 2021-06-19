@@ -1,0 +1,96 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Network Configuration
+
+Parameters:
+  VpcCidrBlock:
+    Description: Cidr Block VPC
+    Type: String
+    Default: 10.1.0.0/16
+    AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
+  PublicSubnetACidrBlock:
+    Description: Cidr Block Public SubnetA
+    Type: String
+    Default: 10.1.0.0/18
+    AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
+
+Resources:
+  # 1. VPCを作る
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      EnableDnsSupport: true # プライベートDNSホスト名・パブリックDNSホスト名での名前解決
+      EnableDnsHostnames: true # プライベートIPv4アドレスに対応するプライベートDNSホスト名が割り当てられる
+      CidrBlock: !Ref VpcCidrBlock
+
+  # 2. サブネットを切る
+  PublicSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: ap-northeast-1a
+      CidrBlock: !Ref PublicSubnetACidrBlock
+
+  # 3. インターネットゲートウェイを作る
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+  
+  # 4. VPCにインターネットゲートウェイをアタッチする
+  VPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  # 5. ルートテーブルを作成する
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+
+  # 6. ルートテーブルにインターネットに出られるように設定を行う
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  # 7. サブネットにルートテーブルを関連付ける
+  PublicSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetA
+      RouteTableId: !Ref PublicRouteTable
+
+  # 8. あるIPアドレスからのSSH接続だけを許すようなセキュリティグループを作成する
+  SSHSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: EnableSSHIngress
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        IpProtocol: tcp
+        FromPort: 22
+        ToPort: 22
+        CidrIp: 175.177.40.24/32 # 個人のグローバルIPアドレス
+
+# 9. 作ったリソースを他のスタックが名前で参照できるようにする
+Outputs:
+  VPCId:
+    Description: VPC ID
+    Value: !Ref VPC
+    Export:
+      Name: !Sub ${AWS::StackName}-VPCID
+
+  PublicSubnetA:
+    Description: Subnet A ID
+    Value: !Ref PublicSubnetA
+    Export:
+      Name: !Sub ${AWS::StackName}-SubnetID
+
+  WebServerSecurityGroup:
+    Description: SecurityGroup ID
+    Value: !GetAtt SSHSecurityGroup.GroupId
+    Export:
+      Name: !Sub ${AWS::StackName}-SecurityGroupID

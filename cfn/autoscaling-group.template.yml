@@ -1,0 +1,48 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Lanch Configuration and AutoScalingGroup Configuration
+
+Parameters:
+  NetworkStackName:
+    Description: Stack Relation With NetworkConfiguration Name
+    Type: String
+    MinLength: 1
+    MaxLength: 255
+    AllowedPattern: ^[a-zA-z][-a-zA-Z0-9]*$
+    Default: asg-tutorial-network-config
+  KeyName:
+    Description: The EC2 Key Pair to allow SSH access to the instance
+    Type: AWS::EC2::KeyPair::KeyName
+
+Resources:
+  # 1. 起動設定を作る
+  LaunchConfiguration:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Properties:
+      AssociatePublicIpAddress: true
+      ImageId: ami-0ee1410f0644c1cac # Amazon Linux AMI 2018.03.0 (HVM), SSD Volume Type
+      InstanceMonitoring: false
+      InstanceType: t2.micro
+      KeyName: !Ref KeyName # EC2とSSH接続するために必要
+      LaunchConfigurationName: demo-launch-configuration # 起動設定名
+      SecurityGroups:
+        - Fn::ImportValue: !Sub ${NetworkStackName}-SecurityGroupID
+
+  # AutoScalingGroupを作成する
+  AutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName: demo-autoscaling-group # AutoScalingGroup名
+      LaunchConfigurationName: !Ref LaunchConfiguration
+      MinSize: 1
+      DesiredCapacity: 1
+      MaxSize: 1
+      Tags:
+        - Key: Name
+          PropagateAtLaunch: true
+          Value: asg-tutorial-ec2 # EC2インスタンスの名前
+      VPCZoneIdentifier:
+        - Fn::ImportValue: !Sub ${NetworkStackName}-SubnetID
+      MetricsCollection: # メトリクスを有効化
+        - Granularity: 1Minute
+          Metrics:
+            - GroupInServiceInstances
