@@ -1,17 +1,27 @@
 AWSTemplateFormatVersion: 2010-09-09
-Description: Alarm template
+Description: Alarm and ScalingPolicy template
 
 Parameters:
   QueueName:
     Description: Queue Name
     Type: String
     Default: tst-dva-queue.fifo
-  ASGName:
-    Description: AutoScalingGroup Name
+  ASGStackName:
+    Description: AutoScalingGroup Stack Name
     Type: String
-    Default: demo-autoscaling-group
+    Default: asg-tutorial-autoscaling
 
 Resources:
+  ScaleOutPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AdjustmentType: ChangeInCapacity
+      PolicyType: SimpleScaling
+      Cooldown: 60
+      AutoScalingGroupName:
+        Fn::ImportValue: !Sub ${ASGStackName}-AutoScalingGroupName
+      ScalingAdjustment: 1
+
   Alarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
@@ -38,10 +48,13 @@ Resources:
               MetricName: GroupInServiceInstances
               Dimensions:
                 - Name: AutoScalingGroupName
-                  Value: !Ref ASGName
+                  Value:
+                    Fn::ImportValue: !Sub ${ASGStackName}-AutoScalingGroupName
             Period: 60
             Stat: Average
           ReturnData: false
       EvaluationPeriods: 1
       Threshold: 1
       ComparisonOperator: GreaterThanOrEqualToThreshold
+      AlarmActions:
+        - !Ref ScaleOutPolicy

@@ -2,6 +2,19 @@ AWSTemplateFormatVersion: 2010-09-09
 Description: Launch Configuration and AutoScalingGroup Configuration
 
 Parameters:
+  Service:
+    Description: Service Name
+    Type: String
+    Default: tst
+    AllowedValues:
+      - tst
+  AccountType:
+    Description: Account Type
+    Type: String
+    Default: dva
+    AllowedValues:
+      - dva
+      - pda
   NetworkStackName:
     Description: Stack Relation With NetworkConfiguration Name
     Type: String
@@ -58,3 +71,10 @@ Resources:
         - Granularity: 1Minute
           Metrics:
             - GroupInServiceInstances
+
+Outputs:
+  AutoScalingGroupName:
+    Description: AutoScalingGroup Name
+    Value: !Ref AutoScalingGroup
+    Export:
+      Name: !Sub ${AWS::StackName}-AutoScalingGroupName
