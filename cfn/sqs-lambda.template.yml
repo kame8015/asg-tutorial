@@ -1,0 +1,62 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: SQS Lambda Function and Lambda Role
+
+Parameters:
+  Service:
+    Description: Service Name
+    Type: String
+    Default: tst
+    AllowedValues:
+      - tst
+  AccountType:
+    Description: Account Type
+    Type: String
+    Default: dva
+    AllowedValues:
+      - dva
+      - pda
+
+Resources:
+  LambdaSQSFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub ${Service}-${AccountType}-lambda-sqs
+      Handler: index.lambda_handler
+      Role: !GetAtt LambdaSQSExecutionRole.Arn
+      Code:
+        ZipFile: |
+          def lambda_handler(event, context):
+            for record in event["Records"]:
+              payload = record["body"]
+              print(str(payload))
+      Runtime: python3.8
+      Tags:
+        - Key: Owner
+          Value: !Ref Service
+
+  LambdaSQSExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Description: Provides SQS execution role with Lambda
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - "sts:AssumeRole"
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/service-role/AWSLambdaSQSQueueExecutionRole"
+      Path: /
+      RoleName: !Sub ${Service}-${AccountType}-lambda-sqs-role
+      Tags:
+        - Key: Owner
+          Value: !Ref Service
+
+Outputs:
+  LambdaSQSArn:
+    Value: !GetAtt LambdaSQSFunction.Arn
+    Export:
+      Name: LambdaSQSArn

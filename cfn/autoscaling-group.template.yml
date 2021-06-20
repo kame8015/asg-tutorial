@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: 2010-09-09
-Description: Lanch Configuration and AutoScalingGroup Configuration
+Description: Launch Configuration and AutoScalingGroup Configuration
 
 Parameters:
   NetworkStackName:
@@ -12,6 +12,18 @@ Parameters:
   KeyName:
     Description: The EC2 Key Pair to allow SSH access to the instance
     Type: AWS::EC2::KeyPair::KeyName
+  InstanceMinSize:
+    Description: Instance Min Size
+    Type: Number
+    Default: 0
+  InstanceDesiredCapacity:
+    Description: Instance Desired Capacity
+    Type: Number
+    Default: 1
+  InstanceMaxSize:
+    Description: Instance Max Size
+    Type: Number
+    Default: 2
 
 Resources:
   # 1. 起動設定を作る
@@ -27,15 +39,15 @@ Resources:
       SecurityGroups:
         - Fn::ImportValue: !Sub ${NetworkStackName}-SecurityGroupID
 
-  # AutoScalingGroupを作成する
+  # 2. AutoScalingGroupを作成する
   AutoScalingGroup:
     Type: AWS::AutoScaling::AutoScalingGroup
     Properties:
       AutoScalingGroupName: demo-autoscaling-group # AutoScalingGroup名
       LaunchConfigurationName: !Ref LaunchConfiguration
-      MinSize: 1
-      DesiredCapacity: 1
-      MaxSize: 1
+      MinSize: !Ref InstanceMinSize
+      DesiredCapacity: !Ref InstanceDesiredCapacity
+      MaxSize: !Ref InstanceMaxSize
       Tags:
         - Key: Name
           PropagateAtLaunch: true
