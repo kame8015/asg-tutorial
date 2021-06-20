@@ -1,0 +1,35 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: SQS
+
+Parameters:
+  Service:
+    Description: Service Name
+    Type: String
+    Default: tst
+    AllowedValues:
+      - tst
+  AccountType:
+    Description: Account Type
+    Type: String
+    Default: dva
+    AllowedValues:
+      - dva
+      - pda
+
+Resources:
+  SQSQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      ContentBasedDeduplication: true # 重複排除
+      FifoQueue: true # First In First Out
+      QueueName: !Sub ${Service}-${AccountType}-queue.fifo
+      Tags:
+        - Key: Owner
+          Value: !Ref Service
+
+  SQSEventSourceMapping:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      FunctionName: !Sub ${Service}-${AccountType}-lambda-sqs
+      BatchSize: 10 # Default
+      EventSourceArn: !GetAtt SQSQueue.Arn

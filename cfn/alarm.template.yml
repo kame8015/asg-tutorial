@@ -1,0 +1,47 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Alarm template
+
+Parameters:
+  QueueName:
+    Description: Queue Name
+    Type: String
+    Default: tst-dva-queue.fifo
+  ASGName:
+    Description: AutoScalingGroup Name
+    Type: String
+    Default: demo-autoscaling-group
+
+Resources:
+  Alarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Alarm for comparing the number of messages in SQS and the number of instances in ASG
+      Metrics:
+        - Id: e1
+          Expression: m1-m2
+          Label: MessagesAndInstancesFire
+        - Id: m1
+          MetricStat:
+            Metric:
+              Namespace: AWS/SQS
+              MetricName: ApproximateNumberOfMessagesVisible
+              Dimensions:
+                - Name: QueueName
+                  Value: !Ref QueueName
+            Period: 60
+            Stat: Average
+          ReturnData: false
+        - Id: m2
+          MetricStat:
+            Metric:
+              Namespace: AWS/AutoScaling
+              MetricName: GroupInServiceInstances
+              Dimensions:
+                - Name: AutoScalingGroupName
+                  Value: !Ref ASGName
+            Period: 60
+            Stat: Average
+          ReturnData: false
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
