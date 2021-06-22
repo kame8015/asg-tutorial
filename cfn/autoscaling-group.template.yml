@@ -15,6 +15,10 @@ Parameters:
     AllowedValues:
       - dva
       - pda
+  ECSAMI:
+    Description: AMI ID
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ecs/optimized-ami/amazon-linux/recommended/image_id
   NetworkStackName:
     Description: Stack Relation With NetworkConfiguration Name
     Type: String
@@ -37,6 +41,10 @@ Parameters:
     Description: Instance Max Size
     Type: Number
     Default: 2
+  # ClusterName:
+  #   Description: ECS Cluster Name
+  #   Type: String
+  #   Default: 
 
 Resources:
   # 1. 起動設定を作る
@@ -44,13 +52,18 @@ Resources:
     Type: AWS::AutoScaling::LaunchConfiguration
     Properties:
       AssociatePublicIpAddress: true
-      ImageId: ami-0ee1410f0644c1cac # Amazon Linux AMI 2018.03.0 (HVM), SSD Volume Type
+      IamInstanceProfile: !Sub arn:aws:iam::${AWS::AccountId}:instance-profile/ecsInstanceRole
+      ImageId: !Ref ECSAMI
       InstanceMonitoring: false
       InstanceType: t2.micro
       KeyName: !Ref KeyName # EC2とSSH接続するために必要
       LaunchConfigurationName: demo-launch-configuration # 起動設定名
       SecurityGroups:
         - Fn::ImportValue: !Sub ${NetworkStackName}-SecurityGroupID
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash -xe
+          echo ECS_CLUSTER=${Service}-${AccountType}-cluster >> /etc/ecs/ecs.config
 
   # 2. AutoScalingGroupを作成する
   AutoScalingGroup:

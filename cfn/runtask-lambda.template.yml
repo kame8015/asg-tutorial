@@ -1,0 +1,126 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Lambda for running task
+
+Parameters:
+  Service:
+    Description: Service Name
+    Type: String
+    Default: tst
+    AllowedValues:
+      - tst
+  AccountType:
+    Description: Account Type
+    Type: String
+    Default: dva
+    AllowedValues:
+      - dva
+      - pda
+
+Resources:
+  LambdaRunTaskFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub ${Service}-${AccountType}-lambda-run-task
+      Handler: index.lambda_handler
+      Role: !GetAtt LambdaRunTaskRole.Arn
+      Environment:
+        Variables:
+          CLUSTER_NAME: !Sub ${Service}-${AccountType}-cluster
+          IMAGE_NAME: sample_python
+          TASK_DEFINITION: sample-python-task-definition
+      Runtime: python3.8
+      Tags:
+        - Key: Owner
+          Value: !Ref Service
+      Code:
+        ZipFile: |
+          import boto3
+          import os
+
+          CLUSTER_NAME = os.getenv("CLUSTER_NAME")
+          IMAGE_NAME = os.getenv("IMAGE_NAME")
+          TASK_DEFINITION = os.getenv("TASK_DEFINITION")
+          s3_bucket_name = "test"
+
+          client = boto3.client("ecs")
+
+          def lambda_handler(event, context):
+            response = client.run_task(
+              cluster=CLUSTER_NAME,
+              launchType="EC2",
+              taskDefinition=TASK_DEFINITION,
+              overrides={
+                "containerOverrides": [
+                  {
+                    "name": IMAGE_NAME,
+                    "environment": [
+                      {"name": "S3_BUCKET_NAME", "value": s3_bucket_name}
+                    ]
+                  }
+                ]
+              }
+            )
+
+  LambdaRunTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Description: Provides Run Task role with lambda
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+              # - iam:PassRole
+              # - ecs:RunTask
+      Path: !Sub /${Service}/
+      # Policies:
+      #   - PolicyName: root
+      #     PolicyDocument:
+      #       Version: 2012-10-17
+      #       Statement:
+      #         - Effect: Allow
+      #           Action:
+      #             - iam:PassRole
+      #               ecs:RunTask
+      RoleName: !Sub ${Service}-${AccountType}-lambda-run-task-role
+      Tags:
+        - Key: Owner
+          Value: !Ref Service
+
+  S3Policy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: !Sub ${Service}-${AccountType}-s3-policy
+      Roles:
+        - !Ref LambdaRunTaskRole
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action:
+              - s3:AbortMultipartUpload
+              - s3:Get*
+              - s3:List*
+              - s3:PutObject
+              - s3:DeleteObject
+            Resource: "*"
+
+  CloudWatchLogsPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: !Sub ${Service}-${AccountType}-logs-policy
+      Roles:
+        - !Ref LambdaRunTaskRole
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action:
+              - logs:CreateLogGroup
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+            Resource: "*"
