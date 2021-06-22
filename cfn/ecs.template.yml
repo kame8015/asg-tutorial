@@ -1,0 +1,76 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Cluster and TaskDefinition
+
+Parameters:
+  Service:
+    Description: Service Name
+    Type: String
+    Default: tst
+    AllowedValues:
+      - tst
+  AccountType:
+    Description: Account Type
+    Type: String
+    Default: dva
+    AllowedValues:
+      - dva
+      - pda
+  ImageName:
+    Description: Container Image Name
+    Type: String
+    Default: sample_python
+
+Resources:
+  # ECS Cluster
+  ECSCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub ${Service}-${AccountType}-cluster
+    
+  # ECS LogGroup
+  ECSLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /ecs/logs/${Service}-${AccountType}-ecs-group
+
+  # ECS Task Execution Role
+  ECSTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${Service}-${AccountType}-ECSTaskExecutionRole
+      Path: !Sub /${Service}/
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ecs-tasks.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+
+  # ECS TaskDefinition
+  ECSTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      ExecutionRoleArn: !Ref ECSTaskExecutionRole
+      TaskRoleArn: !Sub arn:aws:iam::${AWS::AccountId}:role/ecsTaskRoleSample # 要修正
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - EC2
+      ContainerDefinitions:
+        - Name: !Ref ImageName
+          Image: !Ref ImageName
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref ECSLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: .ecs
+          MemoryReservation: 128
+          # PortMappings:
+          #   - HostPort: 80
+          #     Protocol: tcp
+          #     ContainerPort: 80
