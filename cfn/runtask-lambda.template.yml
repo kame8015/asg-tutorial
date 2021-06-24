@@ -27,22 +27,33 @@ Resources:
         Variables:
           CLUSTER_NAME: !Sub ${Service}-${AccountType}-cluster
           IMAGE_NAME: sample_python
-          TASK_DEFINITION: sample-python-task-definition
+          TASK_DEFINITION: sample-python-definition-demo
+          SUBNET_ID: subnet-015937f7acb8d7a14 # 適宜修正
+          SG_ID: sg-0258156e46b344a9a # 適宜修正
       Runtime: python3.8
       Tags:
         - Key: Owner
           Value: !Ref Service
       Code:
         ZipFile: |
+          from datetime import date, datetime
           import boto3
           import os
+          import json
 
           CLUSTER_NAME = os.getenv("CLUSTER_NAME")
           IMAGE_NAME = os.getenv("IMAGE_NAME")
           TASK_DEFINITION = os.getenv("TASK_DEFINITION")
+          SUBNET_ID = os.getenv("SUBNET_ID")
+          SG_ID = os.getenv("SG_ID")
           s3_bucket_name = "test"
 
           client = boto3.client("ecs")
+
+          def json_serial(obj):
+            if isinstance(obj, (datetime, date)):
+              return obj.isoformat()
+            raise TypeError(f"Type {obj} not serializable")
 
           def lambda_handler(event, context):
             response = client.run_task(
@@ -58,8 +69,16 @@ Resources:
                     ]
                   }
                 ]
+              },
+              networkConfiguration={
+                "awsvpcConfiguration": {
+                  "subnets": [SUBNET_ID],
+                  "securityGroups": [SG_ID],
+                  "assignPublicIp": "DISABLED"
+                }
               }
             )
+            return json.dumps(response, default=json_serial)
 
   LambdaRunTaskRole:
     Type: AWS::IAM::Role
@@ -74,27 +93,16 @@ Resources:
                 - lambda.amazonaws.com
             Action:
               - sts:AssumeRole
-              # - iam:PassRole
-              # - ecs:RunTask
       Path: !Sub /${Service}/
-      # Policies:
-      #   - PolicyName: root
-      #     PolicyDocument:
-      #       Version: 2012-10-17
-      #       Statement:
-      #         - Effect: Allow
-      #           Action:
-      #             - iam:PassRole
-      #               ecs:RunTask
       RoleName: !Sub ${Service}-${AccountType}-lambda-run-task-role
       Tags:
         - Key: Owner
           Value: !Ref Service
 
-  S3Policy:
+  EcsRunTaskPolicy:
     Type: AWS::IAM::Policy
     Properties:
-      PolicyName: !Sub ${Service}-${AccountType}-s3-policy
+      PolicyName: !Sub ${Service}-${AccountType}-ecs-run-task-policy
       Roles:
         - !Ref LambdaRunTaskRole
       PolicyDocument:
@@ -102,11 +110,8 @@ Resources:
         Statement:
           - Effect: Allow
             Action:
-              - s3:AbortMultipartUpload
-              - s3:Get*
-              - s3:List*
-              - s3:PutObject
-              - s3:DeleteObject
+              - ecs:RunTask
+              - iam:PassRole
             Resource: "*"
 
   CloudWatchLogsPolicy:
