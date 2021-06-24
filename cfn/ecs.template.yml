@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: 2010-09-09
-Description: Cluster and TaskDefinition
+Description: Cluster, CapacityProvider, and TaskDefinition
 
 Parameters:
   Service:
@@ -26,30 +26,32 @@ Resources:
     Type: AWS::ECS::Cluster
     Properties:
       ClusterName: !Sub ${Service}-${AccountType}-cluster
+      CapacityProviders:
+        - !Ref ECSCapacityProvider
+      Tags:
+        - Key: Owner
+          Value: !Ref Service
+
+  # CapacityProvider
+  ECSCapacityProvider:
+    Type: AWS::ECS::CapacityProvider
+    Properties:
+      AutoScalingGroupProvider:
+        AutoScalingGroupArn:
+          Fn::ImportValue: !Sub ${Service}-${AccountType}-asg
+        ManagedScaling:
+          # InstanceWarmupPeriod: 300 # default
+          # MaximumScalingStepSize: 10000 # default
+          # MinimumScalingStepSize: 1 # default
+          Status: ENABLED
+          TargetCapacity: 100
+        ManagedTerminationProtection: ENABLED
     
   # ECS LogGroup
   ECSLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
       LogGroupName: !Sub /ecs/logs/${Service}-${AccountType}-ecs-group
-
-  # ECS Task Execution Role
-  # ECSTaskExecutionRole:
-  #   Type: AWS::IAM::Role
-  #   Properties:
-  #     RoleName: !Sub ${Service}-${AccountType}-ECSTaskExecutionRole
-  #     Path: !Sub /${Service}/
-  #     AssumeRolePolicyDocument:
-  #       Version: 2012-10-17
-  #       Statement:
-  #         - Effect: Allow
-  #           Principal:
-  #             Service:
-  #               - ecs-tasks.amazonaws.com
-  #           Action:
-  #             - sts:AssumeRole
-  #     ManagedPolicyArns:
-  #       - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
 
   # ECS TaskDefinition
   ECSTaskDefinition:
