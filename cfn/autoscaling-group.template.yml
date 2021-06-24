@@ -41,10 +41,6 @@ Parameters:
     Description: Instance Max Size
     Type: Number
     Default: 2
-  # ClusterName:
-  #   Description: ECS Cluster Name
-  #   Type: String
-  #   Default: 
 
 Resources:
   # 1. 起動設定を作る

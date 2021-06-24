@@ -34,41 +34,42 @@ Resources:
       LogGroupName: !Sub /ecs/logs/${Service}-${AccountType}-ecs-group
 
   # ECS Task Execution Role
-  ECSTaskExecutionRole:
-    Type: AWS::IAM::Role
-    Properties:
-      RoleName: !Sub ${Service}-${AccountType}-ECSTaskExecutionRole
-      Path: !Sub /${Service}/
-      AssumeRolePolicyDocument:
-        Version: 2012-10-17
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service:
-                - ecs-tasks.amazonaws.com
-            Action:
-              - sts:AssumeRole
-      ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+  # ECSTaskExecutionRole:
+  #   Type: AWS::IAM::Role
+  #   Properties:
+  #     RoleName: !Sub ${Service}-${AccountType}-ECSTaskExecutionRole
+  #     Path: !Sub /${Service}/
+  #     AssumeRolePolicyDocument:
+  #       Version: 2012-10-17
+  #       Statement:
+  #         - Effect: Allow
+  #           Principal:
+  #             Service:
+  #               - ecs-tasks.amazonaws.com
+  #           Action:
+  #             - sts:AssumeRole
+  #     ManagedPolicyArns:
+  #       - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
 
   # ECS TaskDefinition
   ECSTaskDefinition:
     Type: AWS::ECS::TaskDefinition
     Properties:
-      ExecutionRoleArn: !Ref ECSTaskExecutionRole
+      Family:  sample-python-definition-demo
+      ExecutionRoleArn: !Sub arn:aws:iam::${AWS::AccountId}:role/ecsTaskExecutionRole
       TaskRoleArn: !Sub arn:aws:iam::${AWS::AccountId}:role/ecsTaskRoleSample # 要修正
       NetworkMode: awsvpc
       RequiresCompatibilities:
         - EC2
       ContainerDefinitions:
         - Name: !Ref ImageName
-          Image: !Ref ImageName
+          Image: !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${ImageName}:latest
           LogConfiguration:
             LogDriver: awslogs
             Options:
               awslogs-group: !Ref ECSLogGroup
               awslogs-region: !Ref AWS::Region
-              awslogs-stream-prefix: .ecs
+              awslogs-stream-prefix: ecs
           MemoryReservation: 128
           # PortMappings:
           #   - HostPort: 80
