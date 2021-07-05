@@ -2,6 +2,12 @@ AWSTemplateFormatVersion: 2010-09-09
 Description: Network Configuration
 
 Parameters:
+  Service:
+    Description: Service ID
+    Type: String
+    Default: tst
+    AllowedValues:
+      - tst
   VpcCidrBlock:
     Description: Cidr Block VPC
     Type: String
@@ -10,8 +16,12 @@ Parameters:
   PublicSubnetACidrBlock:
     Description: Cidr Block Public SubnetA
     Type: String
-    Default: 10.0.0.0/18
+    Default: 10.0.0.0/24
     AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
+  # PrivateSubnetCCidrBlock:
+  #   Description: Cidr Block Private SubnetC
+  #   Type: String
+  #   Default: 10.0.1.0/24
 
 Resources:
   # 1. VPCを作る
@@ -21,6 +31,9 @@ Resources:
       EnableDnsSupport: true # プライベートDNSホスト名・パブリックDNSホスト名での名前解決
       EnableDnsHostnames: true # プライベートIPv4アドレスに対応するプライベートDNSホスト名が割り当てられる
       CidrBlock: !Ref VpcCidrBlock
+      Tags:
+        - Key: Owner
+          Value: !Ref Service
 
   # 2. サブネットを切る
   PublicSubnetA:
@@ -29,17 +42,30 @@ Resources:
       VpcId: !Ref VPC
       AvailabilityZone: ap-northeast-1a
       CidrBlock: !Ref PublicSubnetACidrBlock
+      Tags:
+        - Key: Owner
+          Value: !Ref Service
+
+  # PrivateSubnetC:
+  #   Type: AWS::EC2::Subnet
+  #   Properties:
+  #     VpcId: !Ref VPC
+  #     AvailabilityZone: ap-northeast-1c
+  #     CidrBlock: !Ref PrivateSubnetCCidrBlock
+  #     Tags:
+  #       - Key: Owner
+  #         Value: !Ref Service
 
   # 3. インターネットゲートウェイを作る
-  InternetGateway:
-    Type: AWS::EC2::InternetGateway
+  # InternetGateway:
+  #   Type: AWS::EC2::InternetGateway
   
   # 4. VPCにインターネットゲートウェイをアタッチする
-  VPCGatewayAttachment:
-    Type: AWS::EC2::VPCGatewayAttachment
-    Properties:
-      VpcId: !Ref VPC
-      InternetGatewayId: !Ref InternetGateway
+  # VPCGatewayAttachment:
+  #   Type: AWS::EC2::VPCGatewayAttachment
+  #   Properties:
+  #     VpcId: !Ref VPC
+  #     InternetGatewayId: !Ref InternetGateway
 
   # 5. ルートテーブルを作成する
   PublicRouteTable:
@@ -48,13 +74,13 @@ Resources:
       VpcId: !Ref VPC
 
   # 6. ルートテーブルにインターネットに出られるように設定を行う
-  PublicRoute:
-    Type: AWS::EC2::Route
-    DependsOn: VPCGatewayAttachment
-    Properties:
-      RouteTableId: !Ref PublicRouteTable
-      DestinationCidrBlock: 0.0.0.0/0
-      GatewayId: !Ref InternetGateway
+  # PublicRoute:
+  #   Type: AWS::EC2::Route
+  #   DependsOn: VPCGatewayAttachment
+  #   Properties:
+  #     RouteTableId: !Ref PublicRouteTable
+  #     DestinationCidrBlock: 0.0.0.0/0
+  #     GatewayId: !Ref InternetGateway
 
   # 7. サブネットにルートテーブルを関連付ける
   PublicSubnetRouteTableAssociation:
@@ -64,16 +90,171 @@ Resources:
       RouteTableId: !Ref PublicRouteTable
 
   # 8. あるIPアドレスからのSSH接続だけを許すようなセキュリティグループを作成する
-  SSHSecurityGroup:
+  # SSHSecurityGroup:
+  #   Type: AWS::EC2::SecurityGroup
+  #   Properties:
+  #     GroupDescription: EnableSSHIngress
+  #     VpcId: !Ref VPC
+  #     SecurityGroupIngress:
+  #       IpProtocol: tcp
+  #       FromPort: 22
+  #       ToPort: 22
+  #       CidrIp: 175.177.40.24/32 # 個人のグローバルIPアドレス
+
+  # セキュリティグループを作る
+  SecurityGroupForEc2:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: EnableSSHIngress
+      GroupName: ecs
+      GroupDescription: for ecs
       VpcId: !Ref VPC
       SecurityGroupIngress:
-        IpProtocol: tcp
-        FromPort: 22
-        ToPort: 22
-        CidrIp: 175.177.40.24/32 # 個人のグローバルIPアドレス
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Owner
+          Value: !Ref Service
+
+  # VPCエンドポイントを作る
+  # ecs-agent
+  VPCEndpointForEcsAgent:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      ServiceName: !Join
+        - ""
+        - - com.amazonaws.
+          - !Ref AWS::Region
+          - .ecs-agent
+      SubnetIds:
+        - !Ref PublicSubnetA
+      VpcId: !Ref VPC
+      VpcEndpointType: Interface
+      SecurityGroupIds:
+        - !Ref SecurityGroupForEc2
+      PrivateDnsEnabled: true
+
+  # ecs-telemetry
+  VPCEndpointForEcsTeremetry:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      ServiceName: !Join
+        - ""
+        - - com.amazonaws.
+          - !Ref AWS::Region
+          - .ecs-telemetry
+      SubnetIds:
+        - !Ref PublicSubnetA
+      VpcId: !Ref VPC
+      VpcEndpointType: Interface
+      SecurityGroupIds:
+        - !Ref SecurityGroupForEc2
+      PrivateDnsEnabled: true
+
+  # ecs
+  VPCEndpointForEcs:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      ServiceName: !Join
+        - ""
+        - - com.amazonaws.
+          - !Ref AWS::Region
+          - .ecs
+      SubnetIds:
+        - !Ref PublicSubnetA
+      VpcId: !Ref VPC
+      VpcEndpointType: Interface
+      SecurityGroupIds:
+        - !Ref SecurityGroupForEc2
+      PrivateDnsEnabled: true
+
+  # ecr.api
+  VPCEndpointForEcrApi:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      ServiceName: !Join
+        - ""
+        - - com.amazonaws.
+          - !Ref AWS::Region
+          - .ecr.api
+      SubnetIds:
+        - !Ref PublicSubnetA
+      VpcId: !Ref VPC
+      VpcEndpointType: Interface
+      SecurityGroupIds:
+        - !Ref SecurityGroupForEc2
+      PrivateDnsEnabled: true
+
+  # ecr.dkr
+  VPCEndpointForEcrDkr:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      ServiceName: !Join
+        - ""
+        - - com.amazonaws.
+          - !Ref AWS::Region
+          - .ecr.dkr
+      SubnetIds:
+        - !Ref PublicSubnetA
+      VpcId: !Ref VPC
+      VpcEndpointType: Interface
+      SecurityGroupIds:
+        - !Ref SecurityGroupForEc2
+      PrivateDnsEnabled: true
+
+  # s3
+  VPCEndpointForS3:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal: "*"
+            Action:
+              - s3:GetObject
+              - s3:PutObject
+            Resource:
+              - !Sub arn:aws:s3:::prod-${AWS::Region}-starport-layer-bucket/*
+          # 要検討
+          - Effect: Allow
+            Principal: "*"
+            Action:
+              - "s3:*"
+            Resource:
+              - "*"
+      ServiceName: !Join
+        - ""
+        - - com.amazonaws.
+          - !Ref AWS::Region
+          - .s3
+      # SubnetIds:
+      #   - !Ref PublicSubnetA
+      VpcId: !Ref VPC
+      VpcEndpointType: Gateway
+      RouteTableIds:
+        - !Ref PublicRouteTable
+      # SecurityGroupIds:
+      #   - !Ref SecurityGroupForEc2
+      # PrivateDnsEnabled: true
+
+  # logs
+  VPCEndpointForLogs:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      ServiceName: !Join
+        - ""
+        - - com.amazonaws.
+          - !Ref AWS::Region
+          - .logs
+      SubnetIds:
+        - !Ref PublicSubnetA
+      VpcId: !Ref VPC
+      VpcEndpointType: Interface
+      SecurityGroupIds:
+        - !Ref SecurityGroupForEc2
+      PrivateDnsEnabled: true
 
 # 9. 作ったリソースを他のスタックが名前で参照できるようにする
 Outputs:
@@ -87,10 +268,22 @@ Outputs:
     Description: Subnet A ID
     Value: !Ref PublicSubnetA
     Export:
-      Name: !Sub ${AWS::StackName}-SubnetID
+      Name: !Sub ${AWS::StackName}-SubnetID-A
 
-  WebServerSecurityGroup:
-    Description: SecurityGroup ID
-    Value: !GetAtt SSHSecurityGroup.GroupId
+  # PrivateSubnetC:
+  #   Description: Subnet C ID
+  #   Value: !Ref PrivateSubnetC
+  #   Export:
+  #     Name: !Sub ${AWS::StackName}-SubnetID-C
+
+  SecurityGroup:
+    Description: SecurityGroup ID for EC2
+    Value: !Ref SecurityGroupForEc2
     Export:
       Name: !Sub ${AWS::StackName}-SecurityGroupID
+
+  # WebServerSecurityGroup:
+  #   Description: SecurityGroup ID
+  #   Value: !GetAtt SSHSecurityGroup.GroupId
+  #   Export:
+  #     Name: !Sub ${AWS::StackName}-SecurityGroupID

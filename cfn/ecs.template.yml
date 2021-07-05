@@ -45,7 +45,7 @@ Resources:
           # MinimumScalingStepSize: 1 # default
           Status: ENABLED
           TargetCapacity: 100
-        ManagedTerminationProtection: ENABLED
+        # ManagedTerminationProtection: ENABLED
     
   # ECS LogGroup
   ECSLogGroup:
@@ -58,8 +58,10 @@ Resources:
     Type: AWS::ECS::TaskDefinition
     Properties:
       Family:  sample-python-definition-demo
-      ExecutionRoleArn: !Sub arn:aws:iam::${AWS::AccountId}:role/ecsTaskExecutionRole
-      TaskRoleArn: !Sub arn:aws:iam::${AWS::AccountId}:role/ecsTaskRoleSample # 要修正
+      # ExecutionRoleArn: !Sub arn:aws:iam::${AWS::AccountId}:role/ecsTaskExecutionRole
+      ExecutionRoleArn: !Ref EcsTaskExecutionRole
+      # TaskRoleArn: !Sub arn:aws:iam::${AWS::AccountId}:role/ecsTaskRoleSample # 要修正
+      TaskRoleArn: !Ref EcsTaskRole
       NetworkMode: awsvpc
       RequiresCompatibilities:
         - EC2
@@ -77,3 +79,63 @@ Resources:
           #   - HostPort: 80
           #     Protocol: tcp
           #     ContainerPort: 80
+
+  EcsTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Description: Provides ECS Instance with Task Execution
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ecs-tasks.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+        - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
+      # Path: !Sub /${Service}/
+      Path: /
+      RoleName: !Sub ${Service}-${AccountType}-ecsTaskExecutionRole
+      Tags:
+        - Key: Owner
+          Value: !Ref Service
+
+  EcsTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ecs-tasks.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role
+      RoleName: !Sub ${Service}-${AccountType}-ecsTaskRole
+      Tags:
+        - Key: Owner
+          Value: !Ref Service
+  
+  EcsTaskRolePolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: !Sub ${Service}-${AccountType}-task-role-policy
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action:
+              # - s3:List*
+              # - s3:Get*
+              # - s3:Put*
+              - "s3:*"
+              - "sts:*"
+            Resource: "*"
+      Roles:
+        - !Ref EcsTaskRole
