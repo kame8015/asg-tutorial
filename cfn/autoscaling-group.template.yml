@@ -18,7 +18,7 @@ Parameters:
   ECSAMI:
     Description: AMI ID
     Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
-    Default: /aws/service/ecs/optimized-ami/amazon-linux/recommended/image_id
+    Default: /aws/service/ecs/optimized-ami/amazon-linux-2/recommended/image_id
   NetworkStackName:
     Description: Stack Relation With NetworkConfiguration Name
     Type: String
@@ -26,9 +26,9 @@ Parameters:
     MaxLength: 255
     AllowedPattern: ^[a-zA-z][-a-zA-Z0-9]*$
     Default: asg-tutorial-network-config
-  KeyName:
-    Description: The EC2 Key Pair to allow SSH access to the instance
-    Type: AWS::EC2::KeyPair::KeyName
+  # KeyName:
+  #   Description: The EC2 Key Pair to allow SSH access to the instance
+  #   Type: AWS::EC2::KeyPair::KeyName
   InstanceMinSize:
     Description: Instance Min Size
     Type: Number
@@ -36,7 +36,7 @@ Parameters:
   InstanceDesiredCapacity:
     Description: Instance Desired Capacity
     Type: Number
-    Default: 1
+    Default: 0
   InstanceMaxSize:
     Description: Instance Max Size
     Type: Number
@@ -47,12 +47,13 @@ Resources:
   LaunchConfiguration:
     Type: AWS::AutoScaling::LaunchConfiguration
     Properties:
-      AssociatePublicIpAddress: true
-      IamInstanceProfile: !Sub arn:aws:iam::${AWS::AccountId}:instance-profile/ecsInstanceRole
+      AssociatePublicIpAddress: false
+      # IamInstanceProfile: !Sub arn:aws:iam::${AWS::AccountId}:instance-profile/ecsInstanceRole
+      IamInstanceProfile: !Ref EcsInstanceProfile
       ImageId: !Ref ECSAMI
       InstanceMonitoring: false
       InstanceType: t2.micro
-      KeyName: !Ref KeyName # EC2とSSH接続するために必要
+      # KeyName: !Ref KeyName # EC2とSSH接続するために必要
       LaunchConfigurationName: demo-launch-configuration # 起動設定名
       SecurityGroups:
         - Fn::ImportValue: !Sub ${NetworkStackName}-SecurityGroupID
@@ -70,17 +71,46 @@ Resources:
       MinSize: !Ref InstanceMinSize
       DesiredCapacity: !Ref InstanceDesiredCapacity
       MaxSize: !Ref InstanceMaxSize
-      NewInstancesProtectedFromScaleIn: true
+      # NewInstancesProtectedFromScaleIn: true
       Tags:
         - Key: Name
           PropagateAtLaunch: true
           Value: asg-tutorial-ec2 # EC2インスタンスの名前
       VPCZoneIdentifier:
-        - Fn::ImportValue: !Sub ${NetworkStackName}-SubnetID
+        - Fn::ImportValue: !Sub ${NetworkStackName}-SubnetID-A
+        # - Fn::ImportValue: !Sub ${NetworkStackName}-SubnetID-C
       MetricsCollection: # メトリクスを有効化
         - Granularity: 1Minute
           Metrics:
             - GroupInServiceInstances
+
+  EcsInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Description: Provides EC2 Instance with authorization
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role
+      Path: !Sub /${Service}/
+      RoleName: !Sub ${Service}-${AccountType}-ecsInstanceRole
+      Tags:
+        - Key: Owner
+          Value: !Ref Service
+
+  EcsInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: !Sub /${Service}/
+      Roles:
+        - !Ref EcsInstanceRole
 
 Outputs:
   AutoScalingGroupName:
