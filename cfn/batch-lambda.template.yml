@@ -1,0 +1,127 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: AWS Batch Lambda Function
+
+Parameters:
+  Service:
+    Description: Service ID
+    Type: String
+    Default: sii
+    AllowedValues:
+      - tst
+      - sii
+  AccountType:
+    Description: Account Type
+    Type: String
+    Default: dva
+    AllowedValues:
+      - dva
+      - pda
+  Phase:
+    Description: Phase
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+
+Resources:
+  LambdaBatchFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub ${Service}-${AccountType}-${Phase}-lambda-batch
+      Handler: index.lambda_handler
+      Role: !GetAtt LambdaBatchExecutionRole.Arn
+      Environment:
+        Variables:
+          JOB_NAME: !Sub ${Service}-${AccountType}-${Phase}-job-name
+          JOB_QUEUE: !Sub ${Service}-${AccountType}-${Phase}-job-queue
+          JOB_DEFINITION: !Sub ${Service}-${AccountType}-${Phase}-job-def
+      Runtime: python3.8
+      Tags:
+        - Key: Owner
+          Value: !Ref Service
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import os
+          import time
+
+          JOB_NAME = os.getenv("JOB_NAME", None)
+          JOB_QUEUE = os.getenv("JOB_QUEUE", None)
+          JOB_DEFINITION = os.getenv("JOB_DEFINITION", None)
+          
+          bucket_name = "kame-ecs-test"
+
+          def lambda_handler(event, context):
+            timestamp = time.strftime("%Y%m%d-%H%M%S")
+            batch_client = boto3.client("batch")
+
+            job_name = f"{JOB_NAME}-{timestamp}"
+            response = batch_client.submit_job(
+              jobName=JOB_NAME,
+              jobQueue=JOB_QUEUE,
+              jobDefinition=JOB_DEFINITION,
+              containerOverrides={
+                "environment": [
+                  {
+                    "name": "BUCKET_NAME",
+                    "value": bucket_name
+                  }
+                ]
+              }
+            )
+            print(response)
+
+            return {
+              "statusCode": 200,
+              "body": json.dumps("success")
+            }
+
+  LambdaBatchExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Description: Provides AWS Batch execution role with Lambda
+      RoleName: !Sub ${Service}-${AccountType}-${Phase}-lambda-batch-role
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: !Sub /${Service}/
+      Tags:
+        - Key: Owner
+          Value: !Ref Service
+
+  LambdaBatchPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: !Sub ${Service}-${AccountType}-${Phase}-batch-submit-job-policy
+      Roles:
+        - !Ref LambdaBatchExecutionRole
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action:
+              - batch:SubmitJob
+            Resource: "*"
+
+  LambdaCloudWatchLogsPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: !Sub ${Service}-${AccountType}-${Phase}-logs-policy-lambda
+      Roles:
+        - !Ref LambdaBatchExecutionRole
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action:
+              - logs:CreateLogGroup
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+            Resource: "*"

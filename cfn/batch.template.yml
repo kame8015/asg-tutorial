@@ -1,0 +1,210 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: AWS Batch
+
+Parameters:
+  Service:
+    Description: Service ID
+    Type: String
+    Default: sii
+    AllowedValues:
+      - tst
+      - sii
+  AccountType:
+    Description: Account Type
+    Type: String
+    Default: dva
+    AllowedValues:
+      - dva
+      - pda
+  Phase:
+    Description: Phase
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+  ContainerImageName:
+    Description: ECR Image Name
+    Type: String
+    
+Resources:
+  ####### AWS Batch #######
+  ComputeEnvironment:
+    Type: AWS::Batch::ComputeEnvironment
+    Properties:
+      ComputeEnvironmentName: !Sub ${Service}-${AccountType}-${Phase}-compute-env
+      ComputeResources:
+        MaxvCpus: 10
+        MinvCpus: 0
+        SecurityGroupIds:
+          - Fn::ImportValue: !Sub ${Service}-${AccountType}-${Phase}-sg
+        Subnets:
+          - Fn::ImportValue: !Sub ${Service}-${AccountType}-${Phase}-subnet
+        Type: EC2
+        InstanceRole: !GetAtt EcsInstanceProfile.Arn
+        InstanceTypes:
+          - m5.xlarge
+        Tags:
+            Key: Name
+            Value: Batch Instance
+          # - Key: Owner
+          #   Value: !Ref Service
+      ServiceRole: !GetAtt BatchServiceRole.Arn
+      State: ENABLED
+      Type: MANAGED
+      Tags:
+        Key: Owner
+        Value: !Ref Service
+
+  JobDefinition:
+    Type: AWS::Batch::JobDefinition
+    Properties:
+      JobDefinitionName: !Sub ${Service}-${AccountType}-${Phase}-job-def
+      Type: container
+      ContainerProperties:
+        Environment:  # TODO: 要修正
+          - Name: BUCKET_NAME
+            Value: kame-ecs-test
+        ExecutionRoleArn: !GetAtt EcsTaskExecutionRole.Arn
+        JobRoleArn: !GetAtt EcsTaskRole.Arn
+        Memory: 128  # TODO: 要修正
+        Vcpus: 1  # TODO: 要修正
+        Image: !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${ContainerImageName}:latest
+        LogConfiguration:
+          LogDriver: awslogs
+          Options:
+            awslogs-group: !Ref BatchLogGroup
+            # awslogs-region: !Ref AWS::Region
+            # awslogs-stream-prefix: batch
+      Tags:
+        Key: Owner
+        Value: !Ref Service
+
+  BatchLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /batch/logs/${Service}-${AccountType}-batch
+      RetentionInDays: 30
+
+  JobQueue:
+    Type: AWS::Batch::JobQueue
+    Properties:
+      JobQueueName: !Sub ${Service}-${AccountType}-${Phase}-job-queue
+      ComputeEnvironmentOrder:
+        - Order: 1
+          ComputeEnvironment: !Ref ComputeEnvironment
+      State: ENABLED
+      Priority: 1
+      Tags:
+        Key: Owner
+        Value: !Ref Service
+
+  ####### IAM #######
+  ### For Compute Environment ###
+  # ---------------------- #
+  # ECS Instance Role
+  # ---------------------- #
+  EcsInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${Service}-${AccountType}-${Phase}-ECSInstanceRole
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceForEC2Role
+      Path: !Sub /${Service}/
+      Tags:
+        - Key: Owner
+          Value: !Ref Service
+  EcsInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref EcsInstanceRole
+
+  # ---------------------- #
+  # Batch Service Role
+  # ---------------------- #
+  BatchServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${Service}-${AccountType}-${Phase}-BatchServiceRole
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - batch.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSBatchServiceRole
+      Path: !Sub /${Service}/
+      Tags:
+        - Key: Owner
+          Value: !Ref Service
+
+  ### For Job Definition ###
+  # ---------------------- #
+  # ECS Task Execution Role
+  # ---------------------- #
+  EcsTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${Service}-${AccountType}-${Phase}-ECSTaskExecutionRole
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ecs-tasks.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Path: !Sub /${Service}/
+      Tags:
+        - Key: Owner
+          Value: !Ref Service
+
+  # ---------------------- #
+  # ECS Task Role
+  # ---------------------- #
+  EcsTaskRolePolicy:  # TODO: 要修正
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub ${Service}-${AccountType}-${Phase}-ECSTaskPolicy
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action:
+              - s3:*
+            Resource: "*"
+  EcsTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${Service}-${AccountType}-${Phase}-ECSTaskRole
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Ref EcsTaskRolePolicy
+      Path: !Sub /${Service}/
+      Tags:
+        - Key: Owner
+          Value: !Ref Service

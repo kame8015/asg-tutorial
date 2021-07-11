@@ -1,0 +1,165 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Network Configuration with AWS Batch
+
+Parameters:
+  Service:
+    Description: Service ID
+    Type: String
+    Default: sii
+    AllowedValues:
+      - tst
+      - sii
+  AccountType:
+    Description: Account Type
+    Type: String
+    Default: dva
+    AllowedValues:
+      - dva
+      - pda
+  Phase:
+    Description: Phase
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+  VpcCidrBlock:
+    Description: Cidr Block for VPC
+    Type: String
+    Default: 10.0.0.0/16
+    AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
+  PublicSubnetCidrBlock:
+    Description: Cidr Block for Public Subnet
+    Type: String
+    Default: 10.0.0.0/24
+    AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
+
+Mappings:
+  AvailabilityZoneMap:
+    ap-northeast-1:
+      zone: ap-northeast-1a
+
+Resources:
+  # 1. VPC作成
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      EnableDnsSupport: true # プライベートDNSホスト名・パブリックDNSホスト名での名前解決
+      EnableDnsHostnames: true # プライベートIPv4アドレスに対応するプライベートDNSホスト名が割り当てられる
+      CidrBlock: !Ref VpcCidrBlock
+      Tags:
+        - Key: Owner
+          Value: !Ref Service
+        - Key: Name
+          Value: !Sub ${Service}-${AccountType}-${Phase}-vpc
+  
+  # 2. VPCにサブネット作成
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !FindInMap [AvailabilityZoneMap, !Ref AWS::Region, zone]
+      CidrBlock: !Ref PublicSubnetCidrBlock
+      MapPublicIpOnLaunch: true # パブリックIPv4アドレスが自動的に割り当てられる
+      Tags:
+        - Key: Owner
+          Value: !Ref Service
+        - Key: Name
+          Value: !Sub ${Service}-${AccountType}-${Phase}-subnet
+
+  # 3. インターネットゲートウェイ作成
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Owner
+          Value: !Ref Service
+        - Key: Name
+          Value: !Sub ${Service}-${AccountType}-${Phase}-igw
+    
+  # 4. VPCにインターネットゲートウェイをアタッチ
+  VPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  # 5. VPCにルートテーブル作成
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Owner
+          Value: !Ref Service
+        - Key: Name
+          Value: !Sub ${Service}-${AccountType}-${Phase}-rt
+
+  # 6. ルートテーブルがインターネットゲートウェイを経由して外部に出られるよう設定
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      GatewayId: !Ref InternetGateway
+      DestinationCidrBlock: 0.0.0.0/0
+
+  # 7. サブネットにルートテーブルを関連付ける
+  PublicSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet
+      RouteTableId: !Ref PublicRouteTable
+
+  # 8. VPCにセキュリティグループを作成
+  SecurityGroupForEc2:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: ECS
+      GroupDescription: ECS with AWS Batch
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Owner
+          Value: !Ref Service
+        - Key: Name
+          Value: !Sub ${Service}-${AccountType}-${Phase}-sg
+
+  # Batchサービスロール
+  # BatchRole:
+  #   Type: AWS::IAM::Role
+  #   Properties:
+  #     AssumeRolePolicyDocument:
+  #       Version: 2012-10-17
+  #       Statement:
+  #         - Effect: Allow
+  #           Principal:
+  #             Service:
+  #               - batch.amazonaws.com
+  #           Action:
+  #             - sts:AssumeRole
+  #     ManagedPolicyArns:
+  #       - arn:aws:iam::aws:policy/service-role/AWSBatchServiceRole
+  #     RoleName: !Sub ${Service}-${AccountType}-batchRole
+  #     Tags:
+  #       - Key: Owner
+  #         Value: !Ref Service
+
+Outputs:
+  VPC:
+    Export:
+      Name: !Sub ${Service}-${AccountType}-${Phase}-vpc
+    Value: !Ref VPC
+
+  PublicSubnet:
+    Export:
+      Name: !Sub ${Service}-${AccountType}-${Phase}-subnet
+    Value: !Ref PublicSubnet
+
+  SecurityGroupForEc2:
+    Export:
+      Name: !Sub ${Service}-${AccountType}-${Phase}-sg
+    Value: !Ref SecurityGroupForEc2
