@@ -1,0 +1,22 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: ECR Repository
+
+Parameters:
+  Service:
+    Description: Service ID
+    Type: String
+    Default: sii
+    AllowedValues:
+      - sii
+  RepositoryName:
+    Description: ECR Repository Name
+    Type: String
+
+Resources:
+  ECRRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Ref RepositoryName
+      Tags:
+        - Key: Owner
+          Value: !Ref Service
