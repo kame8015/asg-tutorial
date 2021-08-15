@@ -22,30 +22,49 @@ Parameters:
     Default: dev
     AllowedValues:
       - dev
+  ComputeType:
+    Description: EC2 or FARGATE
+    Type: String
+    AllowedValues:
+      - EC2
+      - FARGATE
   ContainerImageName:
     Description: ECR Image Name
     Type: String
     
+Conditions:
+  isEC2: !Equals [!Ref ComputeType, EC2]
+
 Resources:
   ####### AWS Batch #######
   ComputeEnvironment:
     Type: AWS::Batch::ComputeEnvironment
     Properties:
-      ComputeEnvironmentName: !Sub ${Service}-${AccountType}-${Phase}-compute-env
+      ComputeEnvironmentName: !Sub ${Service}-${AccountType}-${Phase}-compute-env-${ComputeType}
       ComputeResources:
         MaxvCpus: 10
-        MinvCpus: 0
+        MinvCpus: !If
+          - isEC2
+          - 0
+          - !Ref AWS::NoValue
         SecurityGroupIds:
           - Fn::ImportValue: !Sub ${Service}-${AccountType}-${Phase}-sg
         Subnets:
           - Fn::ImportValue: !Sub ${Service}-${AccountType}-${Phase}-subnet
-        Type: EC2
-        InstanceRole: !GetAtt EcsInstanceProfile.Arn
-        InstanceTypes:
+        Type: !Ref ComputeType
+        InstanceRole: !If
+          - isEC2
+          - !GetAtt EcsInstanceProfile.Arn
+          - !Ref AWS::NoValue
+        InstanceTypes: !If
+          - isEC2
           - m5.xlarge
-        Tags:
-            Key: Name
+          - !Ref AWS::NoValue
+        Tags: !If
+          - isEC2
+          - Key: Name
             Value: Batch Instance
+          - !Ref AWS::NoValue
           # - Key: Owner
           #   Value: !Ref Service
       ServiceRole: !GetAtt BatchServiceRole.Arn
@@ -58,17 +77,36 @@ Resources:
   JobDefinition:
     Type: AWS::Batch::JobDefinition
     Properties:
-      JobDefinitionName: !Sub ${Service}-${AccountType}-${Phase}-job-def
+      JobDefinitionName: !Sub ${Service}-${AccountType}-${Phase}-job-def-${ComputeType}
       Type: container
+      PlatformCapabilities: !If  # Required List of Strings
+        - isEC2
+        - - EC2
+        - - FARGATE
       ContainerProperties:
         Environment:  # TODO: 要修正
           - Name: BUCKET_NAME
             Value: kame-ecs-test
         ExecutionRoleArn: !GetAtt EcsTaskExecutionRole.Arn
         JobRoleArn: !GetAtt EcsTaskRole.Arn
-        Memory: 128  # TODO: 要修正
-        Vcpus: 1  # TODO: 要修正
+        Memory: !If
+          - isEC2
+          - 128  # TODO: 要修正
+          - !Ref AWS::NoValue
+        Vcpus: !If
+          - isEC2
+          - 1  # TODO: 要修正
+          - !Ref AWS::NoValue
+        ResourceRequirements: !If
+          - isEC2
+          - !Ref AWS::NoValue
+          - - Type: VCPU
+              Value: 1
+            - Type: MEMORY
+              Value: 2048
         Image: !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${ContainerImageName}:latest
+        NetworkConfiguration: # パブリックIPを割り当て
+          AssignPublicIp: ENABLED
         LogConfiguration:
           LogDriver: awslogs
           Options:
@@ -82,13 +120,13 @@ Resources:
   BatchLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
-      LogGroupName: !Sub /batch/logs/${Service}-${AccountType}-batch
+      LogGroupName: !Sub /batch/logs/${Service}-${AccountType}-batch-${ComputeType}
       RetentionInDays: 30
 
   JobQueue:
     Type: AWS::Batch::JobQueue
     Properties:
-      JobQueueName: !Sub ${Service}-${AccountType}-${Phase}-job-queue
+      JobQueueName: !Sub ${Service}-${AccountType}-${Phase}-job-queue-${ComputeType}
       ComputeEnvironmentOrder:
         - Order: 1
           ComputeEnvironment: !Ref ComputeEnvironment
@@ -105,6 +143,7 @@ Resources:
   # ---------------------- #
   EcsInstanceRole:
     Type: AWS::IAM::Role
+    Condition: isEC2
     Properties:
       RoleName: !Sub ${Service}-${AccountType}-${Phase}-ECSInstanceRole
       AssumeRolePolicyDocument:
@@ -124,6 +163,7 @@ Resources:
           Value: !Ref Service
   EcsInstanceProfile:
     Type: AWS::IAM::InstanceProfile
+    Condition: isEC2
     Properties:
       Roles:
         - !Ref EcsInstanceRole
@@ -134,7 +174,7 @@ Resources:
   BatchServiceRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub ${Service}-${AccountType}-${Phase}-BatchServiceRole
+      RoleName: !Sub ${Service}-${AccountType}-${Phase}-BatchServiceRole-${ComputeType}
       AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement:
@@ -158,7 +198,7 @@ Resources:
   EcsTaskExecutionRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub ${Service}-${AccountType}-${Phase}-ECSTaskExecutionRole
+      RoleName: !Sub ${Service}-${AccountType}-${Phase}-ECSTaskExecutionRole-${ComputeType}
       AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement:
@@ -182,7 +222,7 @@ Resources:
   EcsTaskRolePolicy:  # TODO: 要修正
     Type: AWS::IAM::ManagedPolicy
     Properties:
-      ManagedPolicyName: !Sub ${Service}-${AccountType}-${Phase}-ECSTaskPolicy
+      ManagedPolicyName: !Sub ${Service}-${AccountType}-${Phase}-ECSTaskPolicy-${ComputeType}
       PolicyDocument:
         Version: 2012-10-17
         Statement:
@@ -193,7 +233,7 @@ Resources:
   EcsTaskRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub ${Service}-${AccountType}-${Phase}-ECSTaskRole
+      RoleName: !Sub ${Service}-${AccountType}-${Phase}-ECSTaskRole-${ComputeType}
       AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement:

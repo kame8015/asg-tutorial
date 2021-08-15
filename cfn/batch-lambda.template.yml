@@ -22,19 +22,25 @@ Parameters:
     Default: dev
     AllowedValues:
       - dev
+  ComputeType:
+    Description: EC2 or FARGATE
+    Type: String
+    AllowedValues:
+      - EC2
+      - FARGATE
 
 Resources:
   LambdaBatchFunction:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Sub ${Service}-${AccountType}-${Phase}-lambda-batch
+      FunctionName: !Sub ${Service}-${AccountType}-${Phase}-lambda-batch-${ComputeType}
       Handler: index.lambda_handler
       Role: !GetAtt LambdaBatchExecutionRole.Arn
       Environment:
         Variables:
-          JOB_NAME: !Sub ${Service}-${AccountType}-${Phase}-job-name
-          JOB_QUEUE: !Sub ${Service}-${AccountType}-${Phase}-job-queue
-          JOB_DEFINITION: !Sub ${Service}-${AccountType}-${Phase}-job-def
+          JOB_NAME: !Sub ${Service}-${AccountType}-${Phase}-job-name-${ComputeType}
+          JOB_QUEUE: !Sub ${Service}-${AccountType}-${Phase}-job-queue-${ComputeType}
+          JOB_DEFINITION: !Sub ${Service}-${AccountType}-${Phase}-job-def-${ComputeType}
       Runtime: python3.8
       Tags:
         - Key: Owner
@@ -81,7 +87,7 @@ Resources:
     Type: AWS::IAM::Role
     Properties:
       Description: Provides AWS Batch execution role with Lambda
-      RoleName: !Sub ${Service}-${AccountType}-${Phase}-lambda-batch-role
+      RoleName: !Sub ${Service}-${AccountType}-${Phase}-lambda-batch-role-${ComputeType}
       AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement:
@@ -99,7 +105,7 @@ Resources:
   LambdaBatchPolicy:
     Type: AWS::IAM::Policy
     Properties:
-      PolicyName: !Sub ${Service}-${AccountType}-${Phase}-batch-submit-job-policy
+      PolicyName: !Sub ${Service}-${AccountType}-${Phase}-batch-submit-job-policy-${ComputeType}
       Roles:
         - !Ref LambdaBatchExecutionRole
       PolicyDocument:
@@ -113,7 +119,7 @@ Resources:
   LambdaCloudWatchLogsPolicy:
     Type: AWS::IAM::Policy
     Properties:
-      PolicyName: !Sub ${Service}-${AccountType}-${Phase}-logs-policy-lambda
+      PolicyName: !Sub ${Service}-${AccountType}-${Phase}-logs-policy-lambda-${ComputeType}
       Roles:
         - !Ref LambdaBatchExecutionRole
       PolicyDocument:
